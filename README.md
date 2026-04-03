@@ -4,6 +4,23 @@ Observational Memory as a standalone Hermes memory-provider plugin.
 
 It gives Hermes access to the same local markdown memory store used by Claude Code and Codex, including shared startup context, searchable observations, and optional Hermes writeback into that store.
 
+## Why Observational Memory
+
+Observational Memory is a local-first memory backend for Hermes that keeps memory in plain markdown and can share that same store with Claude Code and Codex. Instead of treating memory as a remote fact database or relying entirely on per-turn dynamic retrieval, it derives compact startup context from longer-term observations and reflections, then lets Hermes search or write into that shared store when needed.
+
+### Where It Fits
+
+- Best fit if you want cross-agent continuity, local files, and inspectable memory instead of a hosted memory service.
+- Compared with Honcho, Mem0, and RetainDB, this is much more local and transparent, with less SaaS or black-box behavior.
+- Compared with OpenViking, Hindsight, and ByteRover, this is less about hierarchical browsing or graph-style knowledge management, and more about stable session continuity plus compact startup context.
+- Compared with Holographic, this is less of a local fact database with algebraic retrieval and more of a shared observation layer across multiple agent tools.
+
+### Architectural Basis
+
+The underlying `observational-memory` package adapts [Mastra's Observational Memory approach](https://mastra.ai/research/observational-memory): an Observer and Reflector compress conversation history into a stable observation log and compact startup memory, rather than depending only on turn-by-turn retrieval. That makes the resulting context more predictable and prompt-cache-friendly while keeping the memory store readable on disk.
+
+Mastra reports 84.23% on LongMemEval with `gpt-4o` and 94.87% with `gpt-5-mini` for the underlying Observational Memory architecture. Those benchmark results are for Mastra's OM approach itself, not for this standalone Hermes plugin, but they are a strong reason to bring the same pattern into Hermes.
+
 ## Install
 
 Install the plugin directly from GitHub:
