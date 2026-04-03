@@ -12,6 +12,14 @@ Install the plugin directly from GitHub:
 hermes plugins install intertwine/hermes-observational-memory
 ```
 
+This install path is verified against Hermes's current `hermes plugins install owner/repo` flow.
+
+Hermes does not currently auto-install `pip_dependencies` from `plugin.yaml`, so install Observational Memory into the same Python environment Hermes uses:
+
+```bash
+uv pip install "observational-memory>=0.3.1,<0.4.0"
+```
+
 Then configure it in Hermes:
 
 ```bash
@@ -25,17 +33,19 @@ Select `observational_memory` when prompted.
 - Hermes with the memory-provider plugin system
 - `observational-memory`
 
-Install OM if you do not already have it:
+Install OM into the Hermes runtime environment if you do not already have it:
 
 ```bash
-pip install observational-memory
+uv pip install "observational-memory>=0.3.1,<0.4.0"
 ```
 
-If you want Claude Code and Codex to share the same memory store too, run:
+If you also want Claude Code and Codex to share the same memory store, run:
 
 ```bash
 om install
 ```
+
+`om install` is optional for Hermes-only use.
 
 For Hermes writeback, either use an existing OM config or set a direct Anthropic/OpenAI key during `hermes memory setup`.
 
@@ -46,6 +56,13 @@ If you prefer cloning manually:
 ```bash
 git clone https://github.com/intertwine/hermes-observational-memory.git \
   ~/.hermes/plugins/observational_memory
+```
+
+Then:
+
+```bash
+uv pip install "observational-memory>=0.3.1,<0.4.0"
+hermes memory setup
 ```
 
 ## What It Adds
@@ -75,8 +92,17 @@ Optional secret written to Hermes `.env`:
 |---------|---------|
 | `OM_HERMES_API_KEY` | API key for the selected direct writeback provider |
 
+## Validation
+
+This repository ships standalone tests for the provider behavior. Run them with:
+
+```bash
+uv run --with pytest pytest tests -q
+```
+
 ## Notes
 
 - This repository is laid out as a Hermes directory plugin, so the repo root is the plugin root.
 - The installed plugin name is `observational_memory`, even though the GitHub repo is named `hermes-observational-memory`.
-- This repo mirrors the provider implementation proposed in the Hermes PR adding Observational Memory as a first-class memory provider.
+- Hermes currently clones directory plugins from Git but does not install their Python dependencies automatically, so the `uv pip install` step is still required.
+- This repo tracks the upstream provider implementation in `plugins/memory/observational_memory/`.
