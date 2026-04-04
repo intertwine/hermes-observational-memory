@@ -25,27 +25,27 @@ Mastra reports 84.23% on LongMemEval with `gpt-4o` and 94.87% with `gpt-5-mini` 
 
 ## Install
 
-Install the plugin directly from GitHub:
+Install the plugin and its Python dependency:
 
 ```bash
 hermes plugins install intertwine/hermes-observational-memory
-```
-
-This install path is verified against Hermes's current `hermes plugins install owner/repo` flow.
-
-Hermes does not currently auto-install `pip_dependencies` from `plugin.yaml`, so install Observational Memory into the same Python environment Hermes uses:
-
-```bash
 uv pip install "observational-memory>=0.4.1,<0.5.0"
 ```
 
-Then configure it in Hermes:
+Then link the plugin into the memory provider directory so `hermes memory setup` can discover it:
 
 ```bash
-hermes memory setup
+ln -s ~/.hermes/plugins/observational_memory \
+      ~/.hermes/hermes-agent/plugins/memory/observational_memory
 ```
 
-Select `observational_memory` when prompted.
+> **Why the symlink?** Hermes's memory provider system currently only discovers providers bundled in `plugins/memory/` inside the hermes-agent source tree. User-installed plugins (`~/.hermes/plugins/`) are not scanned by the memory discovery system yet. This symlink bridges the gap. See [NousResearch/hermes-agent#4956](https://github.com/NousResearch/hermes-agent/issues/4956) for the upstream feature request.
+
+Finally, configure it:
+
+```bash
+hermes memory setup    # select "observational_memory"
+```
 
 ## Requirements
 
@@ -75,11 +75,8 @@ If you prefer cloning manually:
 ```bash
 git clone https://github.com/intertwine/hermes-observational-memory.git \
   ~/.hermes/plugins/observational_memory
-```
-
-Then:
-
-```bash
+ln -s ~/.hermes/plugins/observational_memory \
+      ~/.hermes/hermes-agent/plugins/memory/observational_memory
 uv pip install "observational-memory>=0.4.1,<0.5.0"
 hermes memory setup
 ```
