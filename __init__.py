@@ -90,7 +90,10 @@ REMEMBER_SCHEMA = {
     "parameters": {
         "type": "object",
         "properties": {
-            "content": {"type": "string", "description": "The fact or observation to store."},
+            "content": {
+                "type": "string",
+                "description": "The fact or observation to store.",
+            },
             "importance": {
                 "type": "string",
                 "enum": ["high", "medium", "low"],
@@ -223,14 +226,27 @@ class ObservationalMemoryProvider(MemoryProvider):
         self._session_id = session_id
         hermes_home = kwargs.get("hermes_home")
         self._settings = _load_settings(hermes_home)
-        self._writeback_mode = str(self._settings.get("writeback_mode", "incremental")).strip() or "incremental"
+        self._writeback_mode = (
+            str(self._settings.get("writeback_mode", "incremental")).strip()
+            or "incremental"
+        )
 
         self._apply_env_bridge()
         self._config = self._build_config()
         self._config.ensure_memory_dir()
         self._ensure_startup_memory()
         self._ensure_search_ready()
-        self._writer_enabled = self._writeback_mode != "off" and self._writeback_is_configured()
+        self._writer_enabled = (
+            self._writeback_mode != "off" and self._writeback_is_configured()
+        )
+        if self._writeback_mode != "off" and not self._writer_enabled:
+            logger.warning(
+                "Observational Memory writeback is configured as '%s' but "
+                "the LLM provider is not available — writeback will be "
+                "disabled for this session. Check that an API key is set "
+                "(OM_HERMES_API_KEY in .env, or an existing OM env file).",
+                self._writeback_mode,
+            )
 
     def system_prompt_block(self) -> str:
         if not self._config:
@@ -243,7 +259,9 @@ class ObservationalMemoryProvider(MemoryProvider):
         if self._writer_enabled:
             parts.append("Hermes session writeback is active.")
         else:
-            parts.append("Hermes session writeback is inactive; om_remember still stores explicit notes locally.")
+            parts.append(
+                "Hermes session writeback is inactive; om_remember still stores explicit notes locally."
+            )
 
         profile = self._truncate_prompt_section(
             self._read_text(self._config.profile_path),
@@ -291,10 +309,14 @@ class ObservationalMemoryProvider(MemoryProvider):
                 self._prefetch_query = query
                 self._prefetch_result = formatted
 
-        self._prefetch_thread = threading.Thread(target=_run, daemon=True, name="om-prefetch")
+        self._prefetch_thread = threading.Thread(
+            target=_run, daemon=True, name="om-prefetch"
+        )
         self._prefetch_thread.start()
 
-    def sync_turn(self, user_content: str, assistant_content: str, *, session_id: str = "") -> None:
+    def sync_turn(
+        self, user_content: str, assistant_content: str, *, session_id: str = ""
+    ) -> None:
         if not self._config or self._writeback_mode == "off":
             return
 
@@ -341,7 +363,9 @@ class ObservationalMemoryProvider(MemoryProvider):
         if tool_name == "om_context":
             query = str(args.get("query", "") or "").strip()
             limit = self._coerce_limit(args.get("limit"), default=4)
-            text = self._build_context(query=query, limit=limit, include_search=bool(query))
+            text = self._build_context(
+                query=query, limit=limit, include_search=bool(query)
+            )
             return json.dumps({"provider": self.name, "text": text})
 
         if tool_name == "om_search":
@@ -366,7 +390,9 @@ class ObservationalMemoryProvider(MemoryProvider):
             content = str(args.get("content", "") or "").strip()
             if not content:
                 return json.dumps({"error": "content is required"})
-            importance = str(args.get("importance", "medium") or "medium").strip().lower()
+            importance = (
+                str(args.get("importance", "medium") or "medium").strip().lower()
+            )
             if importance not in _PRIORITY_MAP:
                 importance = "medium"
             stored = self._append_manual_observation(content, priority=importance)
@@ -383,9 +409,15 @@ class ObservationalMemoryProvider(MemoryProvider):
     # -- Internal helpers -------------------------------------------------
 
     def _apply_env_bridge(self) -> None:
-        provider = str(self._settings.get("llm_provider", "inherit-existing")).strip().lower()
+        provider = (
+            str(self._settings.get("llm_provider", "inherit-existing")).strip().lower()
+        )
         model = str(self._settings.get("llm_model", "") or "").strip()
-        if provider and provider != "inherit-existing" and not os.environ.get("OM_LLM_PROVIDER"):
+        if (
+            provider
+            and provider != "inherit-existing"
+            and not os.environ.get("OM_LLM_PROVIDER")
+        ):
             os.environ["OM_LLM_PROVIDER"] = provider
         if model and not os.environ.get("OM_LLM_MODEL"):
             os.environ["OM_LLM_MODEL"] = model
@@ -401,8 +433,12 @@ class ObservationalMemoryProvider(MemoryProvider):
     def _build_config(self):
         from observational_memory.config import Config as OMConfig
 
-        memory_dir = Path(str(self._settings.get("memory_dir") or _DEFAULT_MEMORY_DIR)).expanduser()
-        env_file = Path(str(self._settings.get("env_file") or _DEFAULT_ENV_FILE)).expanduser()
+        memory_dir = Path(
+            str(self._settings.get("memory_dir") or _DEFAULT_MEMORY_DIR)
+        ).expanduser()
+        env_file = Path(
+            str(self._settings.get("env_file") or _DEFAULT_ENV_FILE)
+        ).expanduser()
 
         # OM loads provider/env settings from the env file into process state,
         # so bootstrap a minimal config for that side effect before creating
@@ -414,10 +450,14 @@ class ObservationalMemoryProvider(MemoryProvider):
             "memory_dir": memory_dir,
             "env_file": env_file,
         }
-        search_backend = str(self._settings.get("search_backend", "bm25")).strip() or "bm25"
+        search_backend = (
+            str(self._settings.get("search_backend", "bm25")).strip() or "bm25"
+        )
         kwargs["search_backend"] = search_backend
 
-        provider = str(self._settings.get("llm_provider", "inherit-existing")).strip().lower()
+        provider = (
+            str(self._settings.get("llm_provider", "inherit-existing")).strip().lower()
+        )
         if provider and provider != "inherit-existing":
             kwargs["llm_provider"] = provider
         model = str(self._settings.get("llm_model", "") or "").strip()
@@ -521,7 +561,9 @@ class ObservationalMemoryProvider(MemoryProvider):
             if results:
                 formatted = ["## Relevant Memory"]
                 for item in results:
-                    formatted.append(f"- {item.document.source.value}: {item.document.heading}")
+                    formatted.append(
+                        f"- {item.document.source.value}: {item.document.heading}"
+                    )
                     excerpt = self._excerpt(item.document.content)
                     if excerpt:
                         formatted.append(f"  {excerpt}")
@@ -564,7 +606,11 @@ class ObservationalMemoryProvider(MemoryProvider):
             obs_match = re.search(r"(?ms)^### Observations\n.*?(?=^### |\Z)", section)
             if obs_match:
                 obs_block = obs_match.group(0).rstrip() + "\n" + entry
-                section = section[: obs_match.start()] + obs_block + section[obs_match.end() :]
+                section = (
+                    section[: obs_match.start()]
+                    + obs_block
+                    + section[obs_match.end() :]
+                )
             else:
                 section = section.rstrip() + "\n\n### Observations\n" + entry
             updated = text[: match.start()] + section + text[match.end() :]
@@ -600,7 +646,9 @@ class ObservationalMemoryProvider(MemoryProvider):
                 if self._sync_thread is threading.current_thread():
                     self._sync_thread = None
 
-        self._sync_thread = threading.Thread(target=_run, daemon=True, name="om-observe")
+        self._sync_thread = threading.Thread(
+            target=_run, daemon=True, name="om-observe"
+        )
         self._sync_thread.start()
 
     def _defer_final_flush(self, active_thread: threading.Thread) -> None:
@@ -612,7 +660,9 @@ class ObservationalMemoryProvider(MemoryProvider):
                 if self._sync_thread is threading.current_thread():
                     self._sync_thread = None
 
-        self._sync_thread = threading.Thread(target=_run, daemon=True, name="om-observe-finalize")
+        self._sync_thread = threading.Thread(
+            target=_run, daemon=True, name="om-observe-finalize"
+        )
         self._sync_thread.start()
 
     def _take_pending_messages(self, *, force: bool) -> list:
@@ -693,5 +743,16 @@ class ObservationalMemoryProvider(MemoryProvider):
 
 
 def register(ctx) -> None:
-    """Register Observational Memory as a memory provider plugin."""
-    ctx.register_memory_provider(ObservationalMemoryProvider())
+    """Register Observational Memory as a memory provider plugin.
+
+    Called by both the memory provider system (which passes a collector
+    with register_memory_provider) and the general plugin system (which
+    passes a PluginContext without that method). Guard against the latter
+    to avoid noisy startup warnings.
+    """
+    if hasattr(ctx, "register_memory_provider"):
+        ctx.register_memory_provider(ObservationalMemoryProvider())
+    else:
+        # General plugin loader — memory registration is handled separately
+        # by the memory provider system. No-op here is expected.
+        pass
