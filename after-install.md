@@ -3,7 +3,7 @@
 For Hermes-only use:
 
 ```bash
-uv pip install "observational-memory>=0.3.1,<0.4.0"
+uv pip install "observational-memory>=0.4.1,<0.5.0"
 hermes memory setup
 ```
 
