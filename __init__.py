@@ -687,6 +687,32 @@ class ObservationalMemoryProvider(MemoryProvider):
         except Exception as e:
             logger.warning("Observational Memory writeback failed: %s", e)
             self._restore_pending_messages(pending)
+            return
+
+        # After writing observations, check if the reflector needs to catch up.
+        # This ensures long-term memory builds even without a background scheduler.
+        self._maybe_run_reflector()
+
+    def _maybe_run_reflector(self) -> None:
+        """Run the reflector if daily reflections have fallen behind observations."""
+        if not self._config:
+            return
+        try:
+            from observational_memory.reflect import (
+                reflector_catchup_needed,
+                run_reflector,
+            )
+
+            if reflector_catchup_needed(self._config):
+                logger.info(
+                    "Observational Memory: reflector catch-up needed, running..."
+                )
+                run_reflector(self._config)
+                self._refresh_startup_memory()
+                self._reindex_search()
+                logger.info("Observational Memory: reflector catch-up complete")
+        except Exception as e:
+            logger.debug("Observational Memory reflector catch-up skipped: %s", e)
 
     def _make_message(self, role: str, content: str):
         from observational_memory.transcripts import Message
