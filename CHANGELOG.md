@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.0
+
+- bump the supported `observational-memory` line to `>=0.5.0,<0.6.0`
+- refresh install and after-install docs for the 0.5.0 release line
+- document OM 0.5.0 search/runtime improvements that matter for shared Hermes memory setups, including QMD 2.1 support and `om status` / `om doctor` troubleshooting
+
 ## 1.1.0
 
 - bump observational-memory dependency to >=0.4.0 for Hermes transcript parser support

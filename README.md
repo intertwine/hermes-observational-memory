@@ -4,7 +4,7 @@ Observational Memory as a standalone Hermes memory-provider plugin.
 
 It gives Hermes access to the same local markdown memory store used by Claude Code and Codex, including shared startup context, searchable observations, and optional Hermes writeback into that store.
 
-As of `observational-memory` 0.4.1, the package includes a dedicated Hermes transcript parser that filters v0.7.0 JSONL session logs to human-meaningful content (user/assistant prose only, tool calls summarized as one-liners), achieving ~19x noise reduction on typical sessions.
+As of `observational-memory` 0.5.0, the package includes the dedicated Hermes transcript parser plus the current QMD 2.1 search integration, source-aware search metadata, and better `om status` / `om doctor` visibility for shared-memory setups.
 
 ## Why Observational Memory
 
@@ -29,7 +29,7 @@ Install the plugin and its Python dependency:
 
 ```bash
 hermes plugins install intertwine/hermes-observational-memory
-uv pip install "observational-memory>=0.4.1,<0.5.0"
+uv pip install "observational-memory>=0.5.0,<0.6.0"
 ```
 
 Then link the plugin into the memory provider directory so `hermes memory setup` can discover it:
@@ -50,12 +50,12 @@ hermes memory setup    # select "observational_memory"
 ## Requirements
 
 - Hermes with the memory-provider plugin system
-- `observational-memory` >= 0.4.1 (includes Hermes transcript parser)
+- `observational-memory` >= 0.5.0 (includes Hermes transcript parser and current shared-search improvements)
 
 Install OM into the Hermes runtime environment if you do not already have it:
 
 ```bash
-uv pip install "observational-memory>=0.4.1,<0.5.0"
+uv pip install "observational-memory>=0.5.0,<0.6.0"
 ```
 
 If you also want Claude Code and Codex to share the same memory store, run:
@@ -77,7 +77,7 @@ git clone https://github.com/intertwine/hermes-observational-memory.git \
   ~/.hermes/plugins/observational_memory
 ln -s ~/.hermes/plugins/observational_memory \
       ~/.hermes/hermes-agent/plugins/memory/observational_memory
-uv pip install "observational-memory>=0.4.1,<0.5.0"
+uv pip install "observational-memory>=0.5.0,<0.6.0"
 hermes memory setup
 ```
 
@@ -91,7 +91,11 @@ hermes memory setup
 **Memory integration:**
 - shared startup context from `profile.md` and `active.md`
 - optional Hermes writeback with `incremental`, `session_end`, or `off`
-- Hermes session log parser (via `observational-memory` 0.4.1+) for cron-based observation extraction from JSONL session logs
+- Hermes session log parser plus QMD-aware shared search support (via `observational-memory` 0.5.0+) for cron-based observation extraction and local recall from the same memory store
+
+## Optional QMD Setup
+
+If you want faster local search or hybrid retrieval from Hermes, install [QMD](https://github.com/tobi/qmd) 2.1 separately and set OM's search backend to `qmd` or `qmd-hybrid`. `observational-memory` 0.5.0 exposes the relevant health checks through `om status` and `om doctor`, so you can verify the shared memory/search setup before relying on it from Hermes.
 
 ## Config
 
