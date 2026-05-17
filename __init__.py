@@ -382,7 +382,7 @@ class ObservationalMemoryProvider(MemoryProvider):
                     "score": round(float(item.score), 4),
                     "source": item.document.source.value,
                     "heading": item.document.heading,
-                    "excerpt": self._excerpt(item.document.content),
+                    "excerpt": self._excerpt(item.document.content, query=query),
                 }
                 for item in results
             ]
@@ -593,7 +593,7 @@ class ObservationalMemoryProvider(MemoryProvider):
                     formatted.append(
                         f"- {item.document.source.value}: {item.document.heading}"
                     )
-                    excerpt = self._excerpt(item.document.content)
+                    excerpt = self._excerpt(item.document.content, query=query)
                     if excerpt:
                         formatted.append(f"  {excerpt}")
                 parts.append("\n".join(formatted))
@@ -856,10 +856,23 @@ class ObservationalMemoryProvider(MemoryProvider):
         return trimmed + "..." + notice
 
     @staticmethod
-    def _excerpt(content: str) -> str:
+    def _excerpt(content: str, *, query: str = "") -> str:
         lines = [line.strip() for line in content.strip().splitlines() if line.strip()]
         if lines and lines[0].startswith("## "):
             lines = lines[1:]
+        query_text = " ".join(str(query or "").strip().split())
+        if query_text:
+            all_text = " ".join(lines).strip()
+            match_at = all_text.lower().find(query_text.lower())
+            if match_at >= 0:
+                start = max(0, match_at - 120)
+                end = min(len(all_text), match_at + len(query_text) + 180)
+                excerpt = all_text[start:end].strip()
+                if start > 0:
+                    excerpt = "..." + excerpt
+                if end < len(all_text):
+                    excerpt = excerpt.rstrip() + "..."
+                return excerpt
         text = " ".join(lines[:4]).strip()
         if len(text) > 260:
             return text[:257].rstrip() + "..."

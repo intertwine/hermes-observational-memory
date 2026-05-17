@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.1
+
+- center `om_context` and `om_search` excerpts around the query term so exact shared-memory matches are visible in Hermes results
+
 ## 1.3.0
 
 - align the standalone plugin with current Hermes user-installed memory provider discovery

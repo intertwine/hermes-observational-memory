@@ -333,6 +333,29 @@ def test_om_remember_writes_cluster_record_when_enabled(monkeypatch, tmp_path):
     assert record["payload"]["retention"] == "manual"
 
 
+def test_query_excerpt_centers_matching_memory(monkeypatch):
+    plugin_module = _load_plugin_module(monkeypatch)
+    token = "remote-om-hermes-validation-token"
+    content = "\n".join(
+        [
+            "## 2026-05-17",
+            "### From hermes-agent-vm / legacy-local-import / hermes",
+            "- older imported memory line",
+            "- another older imported memory line",
+            "- more older imported memory line",
+            f"- high priority shared note with {token}",
+        ]
+    )
+
+    excerpt = plugin_module.ObservationalMemoryProvider._excerpt(
+        content,
+        query=token,
+    )
+
+    assert token in excerpt
+    assert excerpt.startswith("...")
+
+
 def test_incremental_sync_flushes_to_observer(monkeypatch, tmp_path):
     plugin_module = _load_plugin_module(monkeypatch)
     _, observer_calls = _install_fake_om(monkeypatch, tmp_path, plugin_module)
