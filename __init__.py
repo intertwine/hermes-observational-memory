@@ -1,8 +1,8 @@
 """Observational Memory provider — shared local markdown memory for Hermes.
 
 This bridges Hermes into the Observational Memory (`om`) ecosystem so Hermes
-can read the same profile/active context that Claude Code and Codex use, and
-optionally write Hermes sessions back into that memory store.
+can read the same profile/active context that Claude Code, Codex, Grok, and
+Cowork use, and optionally write Hermes sessions back into that memory store.
 
 Package dependency: observational-memory
 Config file: $HERMES_HOME/observational_memory.json
@@ -42,8 +42,8 @@ CONTEXT_SCHEMA = {
     "name": "om_context",
     "description": (
         "Load compact Observational Memory context shared across Hermes, Claude Code, "
-        "and Codex. Returns startup profile/active context plus optionally relevant "
-        "memory search results for the current task."
+        "Codex, Grok, and Cowork. Returns startup profile/active context plus "
+        "optionally relevant memory search results for the current task."
     ),
     "parameters": {
         "type": "object",
@@ -252,9 +252,11 @@ class ObservationalMemoryProvider(MemoryProvider):
         if not self._config:
             return ""
 
+        self._sync_cluster_before_context()
+
         parts = [
             "# Observational Memory",
-            "Shared local markdown memory across Hermes, Claude Code, and Codex.",
+            "Shared local-first memory across Hermes, Claude Code, Codex, Grok, and Cowork.",
         ]
         if self._writer_enabled:
             parts.append("Hermes session writeback is active.")
@@ -495,6 +497,32 @@ class ObservationalMemoryProvider(MemoryProvider):
         except Exception as e:
             logger.debug("Observational Memory startup refresh failed: %s", e)
 
+    def _sync_cluster_before_context(self) -> None:
+        if not self._config:
+            return
+        try:
+            from observational_memory.sync.config import (
+                cluster_feature_enabled,
+                load_cluster_config,
+            )
+            from observational_memory.sync.engine import sync_cluster
+
+            cluster_config = load_cluster_config(self._config)
+            if (
+                cluster_config
+                and cluster_feature_enabled(self._config)
+                and getattr(cluster_config, "sync_before_context", False)
+            ):
+                sync_cluster(
+                    self._config,
+                    deadline_ms=getattr(
+                        cluster_config, "startup_pull_deadline_ms", 1500
+                    ),
+                    pull_only=True,
+                )
+        except Exception as e:
+            logger.debug("Observational Memory cluster pull skipped: %s", e)
+
     def _ensure_search_ready(self) -> None:
         if not self._config or self._config.search_backend == "none":
             return
@@ -547,6 +575,7 @@ class ObservationalMemoryProvider(MemoryProvider):
         if not self._config:
             return ""
 
+        self._sync_cluster_before_context()
         self._ensure_startup_memory()
         parts = []
         profile = self._read_text(self._config.profile_path)
@@ -587,6 +616,18 @@ class ObservationalMemoryProvider(MemoryProvider):
         time_label = now.strftime("%H:%M")
         entry = f"- {marker} {time_label} {note}"
 
+        if self._cluster_enabled():
+            try:
+                return self._append_cluster_observation(
+                    entry,
+                    note=note,
+                    priority=priority,
+                    observed_at=now.isoformat().replace("+00:00", "Z"),
+                )
+            except Exception as e:
+                logger.warning("Observational Memory cluster write failed: %s", e)
+                return {"stored": False, "error": str(e), "content": note}
+
         self._config.ensure_memory_dir()
         obs_path = self._config.observations_path
         if obs_path.exists():
@@ -619,6 +660,71 @@ class ObservationalMemoryProvider(MemoryProvider):
         self._refresh_startup_memory()
         self._reindex_search()
         return {"stored": True, "priority": priority, "content": note}
+
+    def _cluster_enabled(self) -> bool:
+        if not self._config:
+            return False
+        try:
+            from observational_memory.sync.config import cluster_feature_enabled
+
+            return bool(cluster_feature_enabled(self._config))
+        except Exception:
+            return False
+
+    def _append_cluster_observation(
+        self,
+        entry: str,
+        *,
+        note: str,
+        priority: str,
+        observed_at: str,
+    ) -> dict:
+        from observational_memory.sync.config import load_cluster_config
+        from observational_memory.sync.engine import sync_cluster
+        from observational_memory.sync.materialize import materialize_cluster_memory
+        from observational_memory.sync.source import (
+            namespace_for_event,
+            source_metadata,
+        )
+        from observational_memory.sync.store import ClusterStore
+
+        cluster_config = load_cluster_config(self._config)
+        if cluster_config is None:
+            raise RuntimeError("OM Cluster is not initialized")
+
+        store = ClusterStore.from_config(self._config)
+        source_event = source_metadata(
+            config=self._config,
+            cluster_config=cluster_config,
+            source="hermes",
+        )
+        record = store.append_record(
+            kind="observation",
+            namespace=namespace_for_event(cluster_config, source_event),
+            source=source_event,
+            payload={
+                "format": "markdown",
+                "body": f"### Observations\n{entry}",
+                "observed_at": observed_at,
+                "message_count": 1,
+                "retention": "manual",
+            },
+        )
+        materialize_cluster_memory(self._config, store)
+        if getattr(cluster_config, "sync_on_observe", False):
+            try:
+                sync_cluster(self._config, deadline_ms=1500)
+            except Exception as e:
+                logger.debug(
+                    "Observational Memory post-write cluster sync skipped: %s",
+                    e,
+                )
+        return {
+            "stored": True,
+            "priority": priority,
+            "content": note,
+            "cluster_record_id": record.record_id,
+        }
 
     def _flush_pending(self, *, force: bool) -> None:
         if not self._writer_enabled or not self._config:

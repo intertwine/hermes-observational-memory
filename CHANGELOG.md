@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.3.0
+
+- align the standalone plugin with current Hermes user-installed memory provider discovery
+- mark the manifest as `kind: exclusive`
+- bump the supported `observational-memory` line to `>=0.6.3,<0.7`
+- add best-effort OM Cluster pull-before-context when `sync_before_context` is enabled
+- make `om_remember` write OM Cluster observation records when cluster mode is active
+- remove the old source-tree symlink workaround from install docs
+
 ## 1.2.0
 
 - bump the supported `observational-memory` line to `>=0.5.0,<0.6.0`

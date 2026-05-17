@@ -2,130 +2,131 @@
 
 Observational Memory as a standalone Hermes memory-provider plugin.
 
-It gives Hermes access to the same local markdown memory store used by Claude Code and Codex, including shared startup context, searchable observations, and optional Hermes writeback into that store.
-
-As of `observational-memory` 0.5.0, the package includes the dedicated Hermes transcript parser plus the current QMD 2.1 search integration, source-aware search metadata, and better `om status` / `om doctor` visibility for shared-memory setups.
+It gives Hermes access to the same local-first memory store used by Claude Code, Codex, Grok, Cowork, and other OM-connected agents. Hermes can load compact startup context, search prior observations and reflections, store explicit notes, and optionally write Hermes turns back into Observational Memory.
 
 ## Why Observational Memory
 
-Observational Memory is a local-first memory backend for Hermes that keeps memory in plain markdown and can share that same store with Claude Code and Codex. Instead of treating memory as a remote fact database or relying entirely on per-turn dynamic retrieval, it derives compact startup context from longer-term observations and reflections, then lets Hermes search or write into that shared store when needed.
+Observational Memory is a local-first memory backend. Memory stays in readable markdown files, with optional OM Cluster sync for sharing trusted records across machines. That makes it a good fit when you want cross-agent continuity without turning memory into an opaque hosted service.
 
-### Where It Fits
-
-- Best fit if you want cross-agent continuity, local files, and inspectable memory instead of a hosted memory service.
-- Compared with Honcho, Mem0, and RetainDB, this is much more local and transparent, with less SaaS or black-box behavior.
-- Compared with OpenViking, Hindsight, and ByteRover, this is less about hierarchical browsing or graph-style knowledge management, and more about stable session continuity plus compact startup context.
-- Compared with Holographic, this is less of a local fact database with algebraic retrieval and more of a shared observation layer across multiple agent tools.
-
-### Architectural Basis
-
-The underlying `observational-memory` package adapts [Mastra's Observational Memory approach](https://mastra.ai/research/observational-memory): an Observer and Reflector compress conversation history into a stable observation log and compact startup memory, rather than depending only on turn-by-turn retrieval. That makes the resulting context more predictable and prompt-cache-friendly while keeping the memory store readable on disk.
-
-Mastra reports 84.23% on LongMemEval with `gpt-4o` and 94.87% with `gpt-5-mini` for the underlying Observational Memory architecture. Those benchmark results are for Mastra's OM approach itself, not for this standalone Hermes plugin, but they are a strong reason to bring the same pattern into Hermes.
-
-## Install
-
-Install the plugin and its Python dependency:
-
-```bash
-hermes plugins install intertwine/hermes-observational-memory
-uv pip install "observational-memory>=0.5.0,<0.6.0"
-```
-
-Then link the plugin into the memory provider directory so `hermes memory setup` can discover it:
-
-```bash
-ln -s ~/.hermes/plugins/observational_memory \
-      ~/.hermes/hermes-agent/plugins/memory/observational_memory
-```
-
-> **Why the symlink?** Hermes's memory provider system currently only discovers providers bundled in `plugins/memory/` inside the hermes-agent source tree. User-installed plugins (`~/.hermes/plugins/`) are not scanned by the memory discovery system yet. This symlink bridges the gap. See [NousResearch/hermes-agent#4956](https://github.com/NousResearch/hermes-agent/issues/4956) for the upstream feature request.
-
-Finally, configure it:
-
-```bash
-hermes memory setup    # select "observational_memory"
-```
+Compared with hosted memory providers, this plugin is more inspectable and easier to audit. Compared with graph or hierarchy-first providers, it is focused on stable session continuity: an observer writes durable observations, a reflector condenses them into compact startup memory, and Hermes can recall more detail on demand.
 
 ## Requirements
 
-- Hermes with the memory-provider plugin system
-- `observational-memory` >= 0.5.0 (includes Hermes transcript parser and current shared-search improvements)
+- Hermes with user-installed memory provider discovery. This is present in Hermes `v2026.4.16` and newer.
+- `observational-memory>=0.6.3,<0.7`.
+- Optional: an initialized OM Cluster if you want Hermes to share memory across machines.
 
-Install OM into the Hermes runtime environment if you do not already have it:
+## Install
+
+Install the plugin from GitHub:
 
 ```bash
-uv pip install "observational-memory>=0.5.0,<0.6.0"
+hermes plugins install intertwine/hermes-observational-memory --no-enable
 ```
 
-If you also want Claude Code and Codex to share the same memory store, run:
+Memory providers are `kind: exclusive` plugins. They are activated through `memory.provider`, not through `plugins.enabled`, so `--no-enable` is intentional.
+
+Then configure Hermes:
 
 ```bash
-om install
-```
-
-`om install` is optional for Hermes-only use.
-
-For Hermes writeback, either use an existing OM config or set a direct Anthropic/OpenAI key during `hermes memory setup`.
-
-## Manual Install
-
-If you prefer cloning manually:
-
-```bash
-git clone https://github.com/intertwine/hermes-observational-memory.git \
-  ~/.hermes/plugins/observational_memory
-ln -s ~/.hermes/plugins/observational_memory \
-      ~/.hermes/hermes-agent/plugins/memory/observational_memory
-uv pip install "observational-memory>=0.5.0,<0.6.0"
 hermes memory setup
+```
+
+Select `observational_memory`.
+
+Hermes will install the declared Python dependency during setup when it is missing. If you need to install it manually in the Hermes runtime, run:
+
+```bash
+uv pip install "observational-memory>=0.6.3,<0.7"
+```
+
+If you also want Claude Code, Codex, Grok, or Cowork to use the same OM store, run:
+
+```bash
+om install --all --non-interactive
 ```
 
 ## What It Adds
 
-**Tools:**
-- `om_context`: loads OM startup context and optional relevant recall
-- `om_search`: searches OM for preferences, project history, and prior decisions
-- `om_remember`: stores an explicit observation immediately
+Tools:
 
-**Memory integration:**
-- shared startup context from `profile.md` and `active.md`
-- optional Hermes writeback with `incremental`, `session_end`, or `off`
-- Hermes session log parser plus QMD-aware shared search support (via `observational-memory` 0.5.0+) for cron-based observation extraction and local recall from the same memory store
+- `om_context`: load compact startup context, with optional query-specific recall.
+- `om_search`: search OM observations and reflections.
+- `om_remember`: store an explicit observation immediately.
 
-## Optional QMD Setup
+Memory integration:
 
-If you want faster local search or hybrid retrieval from Hermes, install [QMD](https://github.com/tobi/qmd) 2.1 separately and set OM's search backend to `qmd` or `qmd-hybrid`. `observational-memory` 0.5.0 exposes the relevant health checks through `om status` and `om doctor`, so you can verify the shared memory/search setup before relying on it from Hermes.
+- shared startup context from `profile.md` and `active.md`;
+- optional Hermes session writeback with `incremental`, `session_end`, or `off`;
+- best-effort OM Cluster pull-before-context when OM Cluster is enabled and `sync_before_context` is true;
+- cluster-aware `om_remember`, so explicit Hermes notes become signed OM Cluster observation records instead of editing generated markdown directly.
+
+## OM Cluster
+
+OM Cluster stays opt-in. The plugin only syncs when the local OM install is already initialized, enabled, and configured for startup pull.
+
+To verify cluster state:
+
+```bash
+om cluster status
+om cluster sync
+```
+
+To have Hermes pull shared records before reading startup memory, set `sync_before_context = true` in OM's cluster config or use:
+
+```bash
+OM_CLUSTER_SYNC_BEFORE_CONTEXT=1 hermes
+```
+
+The pull is best-effort and deadline-bound by OM's `startup_pull_deadline_ms`, so disabled, absent, or temporarily unreachable cluster transports do not block normal Hermes startup.
 
 ## Config
 
-Config file: `$HERMES_HOME/observational_memory.json`
+Plugin config file:
+
+```text
+$HERMES_HOME/observational_memory.json
+```
 
 | Key | Default | Description |
-|-----|---------|-------------|
-| `llm_provider` | `inherit-existing` | Hermes-side writeback provider: `inherit-existing`, `anthropic`, or `openai` |
-| `llm_model` | `""` | Optional observer/reflector model override |
-| `memory_dir` | `~/.local/share/observational-memory` | Shared OM markdown memory directory |
-| `env_file` | `~/.config/observational-memory/env` | OM env file path |
-| `search_backend` | `bm25` | Search backend: `bm25`, `qmd`, `qmd-hybrid`, `none` |
-| `writeback_mode` | `incremental` | `incremental`, `session_end`, or `off` |
+| --- | --- | --- |
+| `llm_provider` | `inherit-existing` | Hermes-side writeback provider: `inherit-existing`, `anthropic`, or `openai`. |
+| `llm_model` | `""` | Optional observer/reflector model override. |
+| `memory_dir` | `~/.local/share/observational-memory` | Shared OM memory directory. |
+| `env_file` | `~/.config/observational-memory/env` | OM env file path. |
+| `search_backend` | `bm25` | Search backend: `bm25`, `qmd`, `qmd-hybrid`, or `none`. |
+| `writeback_mode` | `incremental` | `incremental`, `session_end`, or `off`. |
 
 Optional secret written to Hermes `.env`:
 
 | Env var | Purpose |
-|---------|---------|
-| `OM_HERMES_API_KEY` | API key for the selected direct writeback provider |
+| --- | --- |
+| `OM_HERMES_API_KEY` | API key for a selected direct writeback provider. |
 
 ## Validation
 
-This repository ships standalone tests for the provider behavior. Run them with:
+Local plugin tests:
 
 ```bash
 uv run --with pytest pytest tests -q
 ```
 
+Runtime smoke path:
+
+```bash
+hermes memory status
+om doctor --validate-key
+om cluster status
+```
+
+In a Hermes session, ask Hermes to use:
+
+- `om_context` for startup context;
+- `om_search` for a known memory query;
+- `om_remember` for a test note, then confirm it appears through `om search`.
+
 ## Notes
 
-- This repository is laid out as a Hermes directory plugin, so the repo root is the plugin root.
 - The installed plugin name is `observational_memory`, even though the GitHub repo is named `hermes-observational-memory`.
-- Hermes currently clones directory plugins from Git but does not install their Python dependencies automatically, so the `uv pip install` step is still required.
+- Supported Hermes versions discover this plugin from `$HERMES_HOME/plugins/observational_memory`; no source-tree symlink is required.
+- Older Hermes builds that only scan `plugins/memory/` are not supported by this release path. Upgrade Hermes instead of adding the old symlink workaround.

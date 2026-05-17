@@ -113,8 +113,12 @@ def _install_fake_om(monkeypatch, tmp_path, plugin_module):
 
     def ensure_startup_memory(config):
         config.ensure_memory_dir()
-        config.profile_path.write_text("# Startup Profile\n\n- prefers concise output\n")
-        config.active_path.write_text("# Active Context\n\n- shipping a Hermes memory provider\n")
+        config.profile_path.write_text(
+            "# Startup Profile\n\n- prefers concise output\n"
+        )
+        config.active_path.write_text(
+            "# Active Context\n\n- shipping a Hermes memory provider\n"
+        )
 
     def refresh_startup_memory(config):
         ensure_startup_memory(config)
@@ -155,15 +159,99 @@ def _install_fake_om(monkeypatch, tmp_path, plugin_module):
     monkeypatch.setitem(sys.modules, "observational_memory.config", config_mod)
     monkeypatch.setitem(sys.modules, "observational_memory.search", search_mod)
     monkeypatch.setitem(sys.modules, "observational_memory.startup_memory", startup_mod)
-    monkeypatch.setitem(sys.modules, "observational_memory.transcripts", transcripts_mod)
+    monkeypatch.setitem(
+        sys.modules, "observational_memory.transcripts", transcripts_mod
+    )
     monkeypatch.setitem(sys.modules, "observational_memory.observe", observe_mod)
     monkeypatch.setattr(
         plugin_module.importlib.util,
         "find_spec",
-        lambda name: object() if name == "observational_memory" else original_find_spec(name),
+        lambda name: (
+            object() if name == "observational_memory" else original_find_spec(name)
+        ),
     )
 
     return reindex_calls, observer_calls
+
+
+def _install_fake_cluster(
+    monkeypatch,
+    *,
+    enabled=True,
+    sync_before_context=True,
+    sync_on_observe=False,
+):
+    state = {"sync_calls": [], "records": [], "materialized": []}
+
+    cluster_config = types.SimpleNamespace(
+        sync_before_context=sync_before_context,
+        startup_pull_deadline_ms=37,
+        sync_on_observe=sync_on_observe,
+        default_namespace="shared",
+        node_alias="node-a",
+    )
+
+    def cluster_feature_enabled(config):
+        return enabled
+
+    def load_cluster_config(config):
+        return cluster_config
+
+    def sync_cluster(config, **kwargs):
+        state["sync_calls"].append(kwargs)
+        return types.SimpleNamespace(pulled=0, pushed=0, materialized=False)
+
+    def materialize_cluster_memory(config, store):
+        state["materialized"].append(store)
+        return types.SimpleNamespace(any_written=True)
+
+    def namespace_for_event(config, source_event):
+        return "shared"
+
+    def source_metadata(*, config, cluster_config, source):
+        return {"agent": source, "host_alias": cluster_config.node_alias}
+
+    class FakeStore:
+        cluster_config = types.SimpleNamespace(node_alias="node-a")
+
+        @classmethod
+        def from_config(cls, config):
+            return cls()
+
+        def append_record(self, **kwargs):
+            state["records"].append(kwargs)
+            return types.SimpleNamespace(record_id=f"record-{len(state['records'])}")
+
+    sync_pkg = types.ModuleType("observational_memory.sync")
+    sync_pkg.__path__ = []
+
+    config_mod = types.ModuleType("observational_memory.sync.config")
+    config_mod.cluster_feature_enabled = cluster_feature_enabled
+    config_mod.load_cluster_config = load_cluster_config
+
+    engine_mod = types.ModuleType("observational_memory.sync.engine")
+    engine_mod.sync_cluster = sync_cluster
+
+    materialize_mod = types.ModuleType("observational_memory.sync.materialize")
+    materialize_mod.materialize_cluster_memory = materialize_cluster_memory
+
+    source_mod = types.ModuleType("observational_memory.sync.source")
+    source_mod.namespace_for_event = namespace_for_event
+    source_mod.source_metadata = source_metadata
+
+    store_mod = types.ModuleType("observational_memory.sync.store")
+    store_mod.ClusterStore = FakeStore
+
+    monkeypatch.setitem(sys.modules, "observational_memory.sync", sync_pkg)
+    monkeypatch.setitem(sys.modules, "observational_memory.sync.config", config_mod)
+    monkeypatch.setitem(sys.modules, "observational_memory.sync.engine", engine_mod)
+    monkeypatch.setitem(
+        sys.modules, "observational_memory.sync.materialize", materialize_mod
+    )
+    monkeypatch.setitem(sys.modules, "observational_memory.sync.source", source_mod)
+    monkeypatch.setitem(sys.modules, "observational_memory.sync.store", store_mod)
+
+    return state
 
 
 def test_system_prompt_includes_startup_memory(monkeypatch, tmp_path):
@@ -179,6 +267,19 @@ def test_system_prompt_includes_startup_memory(monkeypatch, tmp_path):
     assert "Active Context" in prompt
 
 
+def test_system_prompt_pulls_cluster_before_context(monkeypatch, tmp_path):
+    plugin_module = _load_plugin_module(monkeypatch)
+    _install_fake_om(monkeypatch, tmp_path, plugin_module)
+    cluster = _install_fake_cluster(monkeypatch)
+    provider = plugin_module.ObservationalMemoryProvider()
+    provider.initialize("session-1-cluster", hermes_home=str(tmp_path))
+
+    cluster["sync_calls"].clear()
+    provider.system_prompt_block()
+
+    assert cluster["sync_calls"] == [{"deadline_ms": 37, "pull_only": True}]
+
+
 def test_om_remember_appends_local_observation(monkeypatch, tmp_path):
     plugin_module = _load_plugin_module(monkeypatch)
     reindex_calls, _ = _install_fake_om(monkeypatch, tmp_path, plugin_module)
@@ -188,7 +289,10 @@ def test_om_remember_appends_local_observation(monkeypatch, tmp_path):
     result = json.loads(
         provider.handle_tool_call(
             "om_remember",
-            {"content": "Bryan wants fixes grounded in artifacts", "importance": "high"},
+            {
+                "content": "Bryan wants fixes grounded in artifacts",
+                "importance": "high",
+            },
         )
     )
 
@@ -197,6 +301,36 @@ def test_om_remember_appends_local_observation(monkeypatch, tmp_path):
     assert "Bryan wants fixes grounded in artifacts" in obs
     assert "🔴" in obs
     assert reindex_calls
+
+
+def test_om_remember_writes_cluster_record_when_enabled(monkeypatch, tmp_path):
+    plugin_module = _load_plugin_module(monkeypatch)
+    _install_fake_om(monkeypatch, tmp_path, plugin_module)
+    cluster = _install_fake_cluster(monkeypatch, sync_on_observe=True)
+    provider = plugin_module.ObservationalMemoryProvider()
+    provider.initialize("session-2-cluster", hermes_home=str(tmp_path))
+
+    cluster["sync_calls"].clear()
+    result = json.loads(
+        provider.handle_tool_call(
+            "om_remember",
+            {
+                "content": "Hermes should see shared cluster memory",
+                "importance": "high",
+            },
+        )
+    )
+
+    assert result["stored"] is True
+    assert result["cluster_record_id"] == "record-1"
+    assert cluster["materialized"]
+    assert cluster["sync_calls"] == [{"deadline_ms": 1500}]
+    record = cluster["records"][0]
+    assert record["kind"] == "observation"
+    assert record["namespace"] == "shared"
+    assert record["source"]["agent"] == "hermes"
+    assert "Hermes should see shared cluster memory" in record["payload"]["body"]
+    assert record["payload"]["retention"] == "manual"
 
 
 def test_incremental_sync_flushes_to_observer(monkeypatch, tmp_path):
@@ -216,7 +350,9 @@ def test_incremental_sync_flushes_to_observer(monkeypatch, tmp_path):
     assert {msg.source for msg in observer_calls[0]} == {"hermes"}
 
 
-def test_session_end_defers_final_flush_until_active_sync_finishes(monkeypatch, tmp_path, caplog):
+def test_session_end_defers_final_flush_until_active_sync_finishes(
+    monkeypatch, tmp_path, caplog
+):
     plugin_module = _load_plugin_module(monkeypatch)
     _install_fake_om(monkeypatch, tmp_path, plugin_module)
     provider = plugin_module.ObservationalMemoryProvider()

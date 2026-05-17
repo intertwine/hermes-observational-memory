@@ -1,6 +1,7 @@
 name: observational_memory
-version: 1.2.0
-description: "Observational Memory — shared local markdown memory across Hermes, Claude Code, and Codex."
+kind: exclusive
+version: 1.3.0
+description: "Observational Memory — local-first shared memory across Hermes, Claude Code, Codex, Grok, and Cowork."
 author: "Bryan Young"
 provides_tools:
   - om_context
@@ -10,7 +11,7 @@ provides_hooks:
   - on_session_end
   - on_memory_write
 pip_dependencies:
-  - observational-memory>=0.5.0,<0.6.0
+  - observational-memory>=0.6.3,<0.7
 hooks:
   - on_session_end
   - on_memory_write
