@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.2
+
+- bump the supported `observational-memory` line to `>=0.6.5,<0.7` (tracks the OM v0.6.5 release that adds `om login` subscription auth)
+
 ## 1.3.1
 
 - center `om_context` and `om_search` excerpts around the query term so exact shared-memory matches are visible in Hermes results
