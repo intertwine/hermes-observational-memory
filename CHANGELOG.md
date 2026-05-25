@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.4.0
+
+- bump the supported `observational-memory` line to `>=0.6.6,<0.7`
+- use OM 0.6.6 scoped startup payloads for Hermes context, including `cwd`, task, and `agent="hermes"` routing
+- handle OM budget hard-cap failures as a graceful writeback skip instead of crashing session-end or background sync
+- expose Hermes-side usage tracking, budget mode, budget warning threshold, and Codex reasoning-effort overrides in memory setup config
+- keep interactive Hermes reflection synchronous by forcing `openai_async_mode = "off"` for plugin writeback
+- add compatibility coverage for scoped startup payloads and budget-cap degradation
+
 ## 1.3.2
 
 - bump the supported `observational-memory` line to `>=0.6.5,<0.7` (tracks the OM v0.6.5 release that adds `om login` subscription auth)

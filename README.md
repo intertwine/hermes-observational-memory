@@ -12,8 +12,8 @@ Compared with hosted memory providers, this plugin is more inspectable and easie
 
 ## Requirements
 
-- Hermes with user-installed memory provider discovery. This is present in Hermes `v2026.4.16` and newer.
-- `observational-memory>=0.6.5,<0.7`.
+- Hermes with user-installed memory provider discovery. This is present in Hermes `v2026.4.16` and newer; current upstream Hermes still routes standalone memory providers through the same `MemoryProvider` ABC, `memory.provider`, and `$HERMES_HOME/plugins/<name>` discovery path.
+- `observational-memory>=0.6.6,<0.7`.
 - Optional: an initialized OM Cluster if you want Hermes to share memory across machines.
 
 ## Install
@@ -37,7 +37,7 @@ Select `observational_memory`.
 Hermes will install the declared Python dependency during setup when it is missing. If you need to install it manually in the Hermes runtime, run:
 
 ```bash
-uv pip install "observational-memory>=0.6.5,<0.7"
+uv pip install "observational-memory>=0.6.6,<0.7"
 ```
 
 If you also want Claude Code, Codex, Grok, or Cowork to use the same OM store, run:
@@ -60,6 +60,8 @@ Memory integration:
 - optional Hermes session writeback with `incremental`, `session_end`, or `off`;
 - best-effort OM Cluster pull-before-context when OM Cluster is enabled and `sync_before_context` is true;
 - cluster-aware `om_remember`, so explicit Hermes notes become signed OM Cluster observation records instead of editing generated markdown directly.
+- OM 0.6.6 scoped startup payloads, so Hermes context generation passes `cwd`, the current task/query, and `agent="hermes"` into OM's freshness, de-duplication, and scope routing.
+- budget-aware writeback, so OM hard caps skip the blocked observe/reflect write without crashing a Hermes turn or session-end flush.
 
 ## OM Cluster
 
@@ -96,6 +98,11 @@ $HERMES_HOME/observational_memory.json
 | `env_file` | `~/.config/observational-memory/env` | OM env file path. |
 | `search_backend` | `bm25` | Search backend: `bm25`, `qmd`, `qmd-hybrid`, or `none`. |
 | `writeback_mode` | `incremental` | `incremental`, `session_end`, or `off`. |
+| `usage_tracking` | `true` | Record OM usage ledger rows for Hermes writeback. |
+| `budget_mode` | `hard` | Default OM budget mode for configured caps: `hard` or `soft`. |
+| `budget_soft_threshold` | `0.8` | Warn when spend reaches this fraction of a configured cap. |
+| `codex_observer_reasoning_effort` | `""` | Optional Codex/ChatGPT observer reasoning-effort override. |
+| `codex_reflector_reasoning_effort` | `""` | Optional Codex/ChatGPT reflector reasoning-effort override. |
 
 Optional secret written to Hermes `.env`:
 
@@ -124,9 +131,11 @@ In a Hermes session, ask Hermes to use:
 - `om_context` for startup context;
 - `om_search` for a known memory query;
 - `om_remember` for a test note, then confirm it appears through `om search`.
+- a temporary hard budget cap to confirm observe/writeback is skipped cleanly rather than breaking the session.
 
 ## Notes
 
 - The installed plugin name is `observational_memory`, even though the GitHub repo is named `hermes-observational-memory`.
 - Supported Hermes versions discover this plugin from `$HERMES_HOME/plugins/observational_memory`; no source-tree symlink is required.
 - Older Hermes builds that only scan `plugins/memory/` are not supported by this release path. Upgrade Hermes instead of adding the old symlink workaround.
+- OpenAI Batch reflection is intentionally not used by the interactive Hermes plugin path. Batch jobs are API-key OpenAI only and can complete later; Hermes session-end writeback stays synchronous and best-effort.

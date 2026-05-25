@@ -12,6 +12,7 @@ Optional secret: OM_HERMES_API_KEY in the active profile's .env
 from __future__ import annotations
 
 import importlib.util
+import inspect
 import json
 import logging
 import os
@@ -36,6 +37,8 @@ _PRIORITY_MAP = {
     "medium": "🟡",
     "low": "🟢",
 }
+
+_CODEX_REASONING_EFFORT_CHOICES = ["", "low", "medium", "high", "xhigh"]
 
 
 CONTEXT_SCHEMA = {
@@ -109,6 +112,12 @@ def _default_settings() -> dict:
     return {
         "llm_provider": "inherit-existing",
         "llm_model": "",
+        "codex_observer_reasoning_effort": "",
+        "codex_reflector_reasoning_effort": "",
+        "usage_tracking": True,
+        "budget_mode": "hard",
+        "budget_soft_threshold": 0.8,
+        "openai_async_mode": "off",
         "memory_dir": _DEFAULT_MEMORY_DIR,
         "env_file": _DEFAULT_ENV_FILE,
         "search_backend": "bm25",
@@ -164,6 +173,8 @@ class ObservationalMemoryProvider(MemoryProvider):
         self._prefetch_result = ""
         self._prefetch_thread: Optional[threading.Thread] = None
         self._sync_thread: Optional[threading.Thread] = None
+        self._runtime_context: Dict[str, Any] = {}
+        self._last_turn_message = ""
 
     @property
     def name(self) -> str:
@@ -184,6 +195,18 @@ class ObservationalMemoryProvider(MemoryProvider):
                 "key": "llm_model",
                 "description": "Observer/reflector model override (optional)",
                 "default": "",
+            },
+            {
+                "key": "codex_observer_reasoning_effort",
+                "description": "Codex/ChatGPT observer reasoning effort override (optional)",
+                "default": "",
+                "choices": _CODEX_REASONING_EFFORT_CHOICES,
+            },
+            {
+                "key": "codex_reflector_reasoning_effort",
+                "description": "Codex/ChatGPT reflector reasoning effort override (optional)",
+                "default": "",
+                "choices": _CODEX_REASONING_EFFORT_CHOICES,
             },
             {
                 "key": "memory_dir",
@@ -208,6 +231,23 @@ class ObservationalMemoryProvider(MemoryProvider):
                 "choices": ["incremental", "session_end", "off"],
             },
             {
+                "key": "usage_tracking",
+                "description": "Record OM usage ledger rows for Hermes writeback",
+                "default": "true",
+                "choices": ["true", "false"],
+            },
+            {
+                "key": "budget_mode",
+                "description": "Default OM budget mode for configured caps",
+                "default": "hard",
+                "choices": ["hard", "soft"],
+            },
+            {
+                "key": "budget_soft_threshold",
+                "description": "Warn when spend reaches this fraction of a cap",
+                "default": "0.8",
+            },
+            {
                 "key": "api_key",
                 "description": "API key for the selected writer provider (optional if OM is already configured)",
                 "secret": True,
@@ -224,6 +264,7 @@ class ObservationalMemoryProvider(MemoryProvider):
 
     def initialize(self, session_id: str, **kwargs) -> None:
         self._session_id = session_id
+        self._runtime_context = dict(kwargs)
         hermes_home = kwargs.get("hermes_home")
         self._settings = _load_settings(hermes_home)
         self._writeback_mode = (
@@ -265,18 +306,17 @@ class ObservationalMemoryProvider(MemoryProvider):
                 "Hermes session writeback is inactive; om_remember still stores explicit notes locally."
             )
 
-        profile = self._truncate_prompt_section(
-            self._read_text(self._config.profile_path),
-            label="Startup Profile",
+        startup = self._startup_payload_text(
+            task=self._last_turn_message
+            or str(self._runtime_context.get("session_title", "") or "")
         )
-        active = self._truncate_prompt_section(
-            self._read_text(self._config.active_path),
-            label="Active Context",
-        )
-        if profile:
-            parts.append(profile)
-        if active:
-            parts.append(active)
+        if startup and not self._is_om_startup_payload(startup):
+            startup = self._truncate_prompt_section(
+                startup,
+                label="Startup Context",
+            )
+        if startup:
+            parts.append(startup)
 
         return "\n\n".join(p for p in parts if p.strip())
 
@@ -349,7 +389,39 @@ class ObservationalMemoryProvider(MemoryProvider):
                 return
         self._flush_pending(force=True)
 
-    def on_memory_write(self, action: str, target: str, content: str) -> None:
+    def on_turn_start(self, turn_number: int, message: str, **kwargs) -> None:
+        self._last_turn_message = str(message or "").strip()
+        if kwargs:
+            self._runtime_context.update(kwargs)
+
+    def on_session_switch(
+        self,
+        new_session_id: str,
+        *,
+        parent_session_id: str = "",
+        reset: bool = False,
+        **kwargs,
+    ) -> None:
+        self._session_id = new_session_id
+        if kwargs:
+            self._runtime_context.update(kwargs)
+        if parent_session_id:
+            self._runtime_context["parent_session_id"] = parent_session_id
+        if reset:
+            with self._pending_lock:
+                self._pending_messages.clear()
+            self._last_turn_message = ""
+            with self._prefetch_lock:
+                self._prefetch_query = ""
+                self._prefetch_result = ""
+
+    def on_memory_write(
+        self,
+        action: str,
+        target: str,
+        content: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
         if not content or not content.strip():
             return
         note = f"Built-in {target} memory {action}: {_sanitize_note(content)}"
@@ -466,7 +538,54 @@ class ObservationalMemoryProvider(MemoryProvider):
         if model:
             kwargs["llm_model"] = model
 
-        return OMConfig(**kwargs)
+        observer_effort = str(
+            self._settings.get("codex_observer_reasoning_effort", "") or ""
+        ).strip()
+        if observer_effort:
+            kwargs["codex_observer_reasoning_effort"] = observer_effort
+        reflector_effort = str(
+            self._settings.get("codex_reflector_reasoning_effort", "") or ""
+        ).strip()
+        if reflector_effort:
+            kwargs["codex_reflector_reasoning_effort"] = reflector_effort
+
+        kwargs["usage_tracking"] = self._coerce_bool(
+            self._settings.get("usage_tracking"), default=True
+        )
+        budget_mode = (
+            str(self._settings.get("budget_mode", "hard") or "hard").strip().lower()
+        )
+        kwargs["budget_mode"] = (
+            budget_mode if budget_mode in {"hard", "soft"} else "hard"
+        )
+        kwargs["budget_soft_threshold"] = self._coerce_float(
+            self._settings.get("budget_soft_threshold"), default=0.8
+        )
+
+        # OpenAI Batch reflection is intentionally disabled for interactive
+        # Hermes hooks. Session-end memory should either finish now or degrade.
+        kwargs["openai_async_mode"] = "off"
+
+        return self._make_config(OMConfig, kwargs)
+
+    @staticmethod
+    def _make_config(config_cls, kwargs: Dict[str, Any]):
+        try:
+            signature = inspect.signature(config_cls)
+            accepted = {
+                name
+                for name, param in signature.parameters.items()
+                if param.kind
+                in {
+                    inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                    inspect.Parameter.KEYWORD_ONLY,
+                }
+            }
+            if accepted:
+                kwargs = {key: value for key, value in kwargs.items() if key in accepted}
+        except (TypeError, ValueError):
+            pass
+        return config_cls(**kwargs)
 
     def _writeback_is_configured(self) -> bool:
         if not self._config:
@@ -576,14 +695,10 @@ class ObservationalMemoryProvider(MemoryProvider):
             return ""
 
         self._sync_cluster_before_context()
-        self._ensure_startup_memory()
         parts = []
-        profile = self._read_text(self._config.profile_path)
-        active = self._read_text(self._config.active_path)
-        if profile:
-            parts.append(profile)
-        if active:
-            parts.append(active)
+        startup = self._startup_payload_text(task=query or self._last_turn_message)
+        if startup:
+            parts.append(startup)
 
         if include_search:
             results = self._search(query, limit=limit)
@@ -604,6 +719,37 @@ class ObservationalMemoryProvider(MemoryProvider):
                 parts.append(fallback)
 
         return "\n\n".join(p for p in parts if p.strip())
+
+    def _startup_payload_text(self, *, task: str = "") -> str:
+        if not self._config:
+            return ""
+
+        try:
+            from observational_memory.startup_memory import build_startup_payload
+
+            payload = build_startup_payload(
+                self._config,
+                cwd=self._current_cwd(),
+                task=str(task or "").strip() or None,
+                agent="hermes",
+            )
+            return str(getattr(payload, "text", "") or "").strip()
+        except Exception as e:
+            logger.debug("Observational Memory scoped startup payload skipped: %s", e)
+
+        self._ensure_startup_memory()
+        parts = []
+        profile = self._read_text(self._config.profile_path)
+        active = self._read_text(self._config.active_path)
+        if profile:
+            parts.append(profile)
+        if active:
+            parts.append(active)
+        return "\n\n".join(p for p in parts if p.strip())
+
+    @staticmethod
+    def _is_om_startup_payload(text: str) -> bool:
+        return text.lstrip().startswith("# Observational Memory Startup Context")
 
     def _append_manual_observation(self, content: str, *, priority: str) -> dict:
         if not self._config:
@@ -791,6 +937,14 @@ class ObservationalMemoryProvider(MemoryProvider):
             cfg = replace(self._config, min_messages=1) if force else self._config
             run_observer(pending, cfg, dry_run=False)
         except Exception as e:
+            if self._is_budget_exceeded(e):
+                logger.warning(
+                    "Observational Memory budget blocked Hermes writeback; "
+                    "dropping %d pending message(s): %s",
+                    len(pending),
+                    e,
+                )
+                return
             logger.warning("Observational Memory writeback failed: %s", e)
             self._restore_pending_messages(pending)
             return
@@ -818,7 +972,33 @@ class ObservationalMemoryProvider(MemoryProvider):
                 self._reindex_search()
                 logger.info("Observational Memory: reflector catch-up complete")
         except Exception as e:
+            if self._is_budget_exceeded(e):
+                logger.warning(
+                    "Observational Memory budget blocked Hermes reflection catch-up: %s",
+                    e,
+                )
+                return
             logger.debug("Observational Memory reflector catch-up skipped: %s", e)
+
+    @staticmethod
+    def _current_cwd() -> str:
+        for key in ("TERMINAL_CWD", "PWD"):
+            value = os.environ.get(key, "").strip()
+            if value:
+                return value
+        try:
+            return os.getcwd()
+        except Exception:
+            return ""
+
+    @staticmethod
+    def _is_budget_exceeded(error: Exception) -> bool:
+        try:
+            from observational_memory.usage.budgets import BudgetExceededError
+
+            return isinstance(error, BudgetExceededError)
+        except Exception:
+            return error.__class__.__name__ == "BudgetExceededError"
 
     def _make_message(self, role: str, content: str):
         from observational_memory.transcripts import Message
@@ -885,6 +1065,26 @@ class ObservationalMemoryProvider(MemoryProvider):
         except (TypeError, ValueError):
             parsed = default
         return max(1, min(parsed, 10))
+
+    @staticmethod
+    def _coerce_bool(value: Any, *, default: bool) -> bool:
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return default
+        text = str(value).strip().lower()
+        if text in {"1", "true", "yes", "on"}:
+            return True
+        if text in {"0", "false", "no", "off"}:
+            return False
+        return default
+
+    @staticmethod
+    def _coerce_float(value: Any, *, default: float) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
 
 
 def register(ctx) -> None:
