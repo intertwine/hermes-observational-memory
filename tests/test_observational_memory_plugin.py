@@ -280,6 +280,99 @@ def test_system_prompt_pulls_cluster_before_context(monkeypatch, tmp_path):
     assert cluster["sync_calls"] == [{"deadline_ms": 37, "pull_only": True}]
 
 
+def test_reasoning_effort_schema_matches_om_supported_values(monkeypatch):
+    plugin_module = _load_plugin_module(monkeypatch)
+    provider = plugin_module.ObservationalMemoryProvider()
+    schema = {field["key"]: field for field in provider.get_config_schema()}
+
+    expected = ["", "low", "medium", "high", "xhigh"]
+    assert schema["codex_observer_reasoning_effort"]["choices"] == expected
+    assert schema["codex_reflector_reasoning_effort"]["choices"] == expected
+
+
+def test_context_uses_scoped_startup_payload(monkeypatch, tmp_path):
+    plugin_module = _load_plugin_module(monkeypatch)
+    _install_fake_om(monkeypatch, tmp_path, plugin_module)
+    calls = []
+
+    def build_startup_payload(
+        config,
+        *,
+        budget_chars=None,
+        cwd=None,
+        task=None,
+        agent=None,
+    ):
+        calls.append({"cwd": cwd, "task": task, "agent": agent})
+        return types.SimpleNamespace(
+            text=f"# Startup Profile\n\n- scoped for {agent}\n\n# Active Context\n\n- task: {task}\n- cwd: {cwd}"
+        )
+
+    sys.modules["observational_memory.startup_memory"].build_startup_payload = (
+        build_startup_payload
+    )
+    monkeypatch.setenv("TERMINAL_CWD", str(tmp_path / "project"))
+    provider = plugin_module.ObservationalMemoryProvider()
+    provider.initialize("session-scoped", hermes_home=str(tmp_path))
+    provider.on_turn_start(1, "ship the Hermes OM plugin")
+
+    prompt = provider.system_prompt_block()
+    context = json.loads(
+        provider.handle_tool_call("om_context", {"query": "budget parity"})
+    )["text"]
+
+    assert "scoped for hermes" in prompt
+    assert "task: ship the Hermes OM plugin" in prompt
+    assert "task: budget parity" in context
+    assert calls[0] == {
+        "cwd": str(tmp_path / "project"),
+        "task": "ship the Hermes OM plugin",
+        "agent": "hermes",
+    }
+    assert calls[1] == {
+        "cwd": str(tmp_path / "project"),
+        "task": "budget parity",
+        "agent": "hermes",
+    }
+
+
+def test_system_prompt_preserves_om_startup_payload_handles(monkeypatch, tmp_path):
+    plugin_module = _load_plugin_module(monkeypatch)
+    _install_fake_om(monkeypatch, tmp_path, plugin_module)
+    marker = "startup-overflow-handle: active:hermes:deep-context"
+
+    def build_startup_payload(
+        config,
+        *,
+        budget_chars=None,
+        cwd=None,
+        task=None,
+        agent=None,
+    ):
+        return types.SimpleNamespace(
+            text=(
+                "# Observational Memory Startup Context\n\n"
+                "## Startup Routing\n\n"
+                "- Agent: hermes\n\n"
+                "## Active Context\n\n"
+                f"{'important scoped context. ' * 260}\n\n"
+                "## Startup Overflow\n\n"
+                f"- {marker}\n"
+            )
+        )
+
+    sys.modules["observational_memory.startup_memory"].build_startup_payload = (
+        build_startup_payload
+    )
+    provider = plugin_module.ObservationalMemoryProvider()
+    provider.initialize("session-large-payload", hermes_home=str(tmp_path))
+
+    prompt = provider.system_prompt_block()
+
+    assert marker in prompt
+    assert "truncated to" not in prompt
+
+
 def test_om_remember_appends_local_observation(monkeypatch, tmp_path):
     plugin_module = _load_plugin_module(monkeypatch)
     reindex_calls, _ = _install_fake_om(monkeypatch, tmp_path, plugin_module)
@@ -371,6 +464,38 @@ def test_incremental_sync_flushes_to_observer(monkeypatch, tmp_path):
     assert observer_calls
     assert len(observer_calls[0]) == 6
     assert {msg.source for msg in observer_calls[0]} == {"hermes"}
+
+
+def test_budget_exceeded_drops_pending_without_crashing(monkeypatch, tmp_path, caplog):
+    plugin_module = _load_plugin_module(monkeypatch)
+    _install_fake_om(monkeypatch, tmp_path, plugin_module)
+
+    usage_pkg = types.ModuleType("observational_memory.usage")
+    usage_pkg.__path__ = []
+    budgets_mod = types.ModuleType("observational_memory.usage.budgets")
+
+    class BudgetExceededError(Exception):
+        pass
+
+    budgets_mod.BudgetExceededError = BudgetExceededError
+    monkeypatch.setitem(sys.modules, "observational_memory.usage", usage_pkg)
+    monkeypatch.setitem(sys.modules, "observational_memory.usage.budgets", budgets_mod)
+
+    def run_observer(messages, config, dry_run=False):
+        raise BudgetExceededError("daily observe budget exceeded")
+
+    sys.modules["observational_memory.observe"].run_observer = run_observer
+
+    provider = plugin_module.ObservationalMemoryProvider()
+    provider.initialize("session-budget", hermes_home=str(tmp_path))
+    provider._config.min_messages = 1
+
+    with caplog.at_level("WARNING"):
+        provider.sync_turn("first user", "first assistant")
+        provider.shutdown()
+
+    assert "budget blocked Hermes writeback" in caplog.text
+    assert provider._pending_messages == []
 
 
 def test_session_end_defers_final_flush_until_active_sync_finishes(
