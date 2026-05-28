@@ -13,7 +13,7 @@ Compared with hosted memory providers, this plugin is more inspectable and easie
 ## Requirements
 
 - Hermes with user-installed memory provider discovery. This is present in Hermes `v2026.4.16` and newer; current upstream Hermes still routes standalone memory providers through the same `MemoryProvider` ABC, `memory.provider`, and `$HERMES_HOME/plugins/<name>` discovery path.
-- `observational-memory>=0.6.6,<0.7`.
+- `observational-memory>=0.6.7,<0.7`.
 - Optional: an initialized OM Cluster if you want Hermes to share memory across machines.
 
 ## Install
@@ -37,7 +37,7 @@ Select `observational_memory`.
 Hermes will install the declared Python dependency during setup when it is missing. If you need to install it manually in the Hermes runtime, run:
 
 ```bash
-uv pip install "observational-memory>=0.6.6,<0.7"
+uv pip install "observational-memory>=0.6.7,<0.7"
 ```
 
 If you also want Claude Code, Codex, Grok, or Cowork to use the same OM store, run:
