@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.0
+
+- bump the supported `observational-memory` line to `>=0.9.0,<0.10`
+- refresh docs for the OM v0.9.0 host set, including OpenCode and Kimi Code CLI
+- keep Hermes writeback aligned with OM usage budgets and the v0.9.0 bounded background-observer release line
+
 ## 1.4.1
 
 - bump the supported `observational-memory` line to `>=0.6.7,<0.7` (tracks the OM v0.6.7 release: fail-closed startup hooks, configurable reflector input budget, a Codex-safe reflector output cap, and clean async-Batch error UX — all additive and API-compatible for this plugin)

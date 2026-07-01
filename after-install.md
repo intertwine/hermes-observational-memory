@@ -8,10 +8,10 @@ hermes memory setup
 
 Select `observational_memory`.
 
-Hermes will install `observational-memory>=0.6.7,<0.7` during setup when it is missing. If you need to install it manually in the Hermes runtime:
+Hermes will install `observational-memory>=0.9.0,<0.10` during setup when it is missing. If you need to install it manually in the Hermes runtime:
 
 ```bash
-uv pip install "observational-memory>=0.6.7,<0.7"
+uv pip install "observational-memory>=0.9.0,<0.10"
 ```
 
 Useful checks:
@@ -24,4 +24,4 @@ om cluster status
 
 If OM Cluster is enabled and `sync_before_context` is true, Hermes pulls shared records before loading startup memory. No source-tree symlink is required on supported Hermes releases.
 
-OM 0.6.6 usage budgets apply to Hermes writeback. If a hard cap blocks observe or reflection, the plugin logs the block and skips that write without crashing the Hermes session. OpenAI Batch reflection is intentionally disabled for this interactive hook path.
+OM 0.9.0 usage budgets and bounded observer behavior apply to Hermes writeback. If a hard cap blocks observe or reflection, the plugin logs the block and skips that write without crashing the Hermes session. OpenAI Batch reflection is intentionally disabled for this interactive hook path.
