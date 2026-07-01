@@ -2,7 +2,7 @@
 
 Observational Memory as a standalone Hermes memory-provider plugin.
 
-It gives Hermes access to the same local-first memory store used by Claude Code, Codex, Grok, Cowork, and other OM-connected agents. Hermes can load compact startup context, search prior observations and reflections, store explicit notes, and optionally write Hermes turns back into Observational Memory.
+It gives Hermes access to the same local-first memory store used by Claude Code, Codex, OpenCode, Kimi Code CLI, Grok, Cowork, and other OM-connected agents. Hermes can load compact startup context, search prior observations and reflections, store explicit notes, and optionally write Hermes turns back into Observational Memory.
 
 ## Why Observational Memory
 
@@ -13,7 +13,7 @@ Compared with hosted memory providers, this plugin is more inspectable and easie
 ## Requirements
 
 - Hermes with user-installed memory provider discovery. This is present in Hermes `v2026.4.16` and newer; current upstream Hermes still routes standalone memory providers through the same `MemoryProvider` ABC, `memory.provider`, and `$HERMES_HOME/plugins/<name>` discovery path.
-- `observational-memory>=0.6.7,<0.7`.
+- `observational-memory>=0.9.0,<0.10`.
 - Optional: an initialized OM Cluster if you want Hermes to share memory across machines.
 
 ## Install
@@ -37,10 +37,10 @@ Select `observational_memory`.
 Hermes will install the declared Python dependency during setup when it is missing. If you need to install it manually in the Hermes runtime, run:
 
 ```bash
-uv pip install "observational-memory>=0.6.7,<0.7"
+uv pip install "observational-memory>=0.9.0,<0.10"
 ```
 
-If you also want Claude Code, Codex, Grok, or Cowork to use the same OM store, run:
+If you also want Claude Code, Codex, OpenCode, Kimi, Grok, or Cowork to use the same OM store, run:
 
 ```bash
 om install --all --non-interactive
@@ -60,7 +60,7 @@ Memory integration:
 - optional Hermes session writeback with `incremental`, `session_end`, or `off`;
 - best-effort OM Cluster pull-before-context when OM Cluster is enabled and `sync_before_context` is true;
 - cluster-aware `om_remember`, so explicit Hermes notes become signed OM Cluster observation records instead of editing generated markdown directly.
-- OM 0.6.6 scoped startup payloads, so Hermes context generation passes `cwd`, the current task/query, and `agent="hermes"` into OM's freshness, de-duplication, and scope routing.
+- OM 0.9.0 scoped startup payloads, so Hermes context generation passes `cwd`, the current task/query, and `agent="hermes"` into OM's freshness, de-duplication, and scope routing.
 - budget-aware writeback, so OM hard caps skip the blocked observe/reflect write without crashing a Hermes turn or session-end flush.
 
 ## OM Cluster

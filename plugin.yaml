@@ -1,7 +1,7 @@
 name: observational_memory
 kind: exclusive
-version: 1.4.1
-description: "Observational Memory — local-first shared memory across Hermes, Claude Code, Codex, Grok, and Cowork."
+version: 1.5.0
+description: "Observational Memory — local-first shared memory across Hermes, Claude Code, Codex, OpenCode, Kimi, Grok, and Cowork."
 author: "Bryan Young"
 provides_tools:
   - om_context
@@ -11,7 +11,7 @@ provides_hooks:
   - on_session_end
   - on_memory_write
 pip_dependencies:
-  - observational-memory>=0.6.7,<0.7
+  - observational-memory>=0.9.0,<0.10
 hooks:
   - on_session_end
   - on_memory_write
