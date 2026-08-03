@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.5.1
+
+- accept the `observational-memory>=0.10.0,<0.11` release line
+- preserve the existing Hermes provider behavior while OM adds the optional native-memory bridge
+
 ## 1.5.0
 
 - bump the supported `observational-memory` line to `>=0.9.0,<0.10`
