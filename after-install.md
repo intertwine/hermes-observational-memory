@@ -8,10 +8,10 @@ hermes memory setup
 
 Select `observational_memory`.
 
-Hermes will install `observational-memory>=0.9.0,<0.10` during setup when it is missing. If you need to install it manually in the Hermes runtime:
+Hermes will install `observational-memory>=0.10.0,<0.11` during setup when it is missing. If you need to install it manually in the Hermes runtime:
 
 ```bash
-uv pip install "observational-memory>=0.9.0,<0.10"
+uv pip install "observational-memory>=0.10.0,<0.11"
 ```
 
 Useful checks:
