@@ -34,6 +34,10 @@ def _load_plugin_module(monkeypatch):
 
 
 def _install_fake_om(monkeypatch, tmp_path, plugin_module):
+    # initialize() passes plugin defaults into Config. A fake Config alone does
+    # not isolate the caller's explicit defaults from the developer's real home.
+    monkeypatch.setattr(plugin_module, "_DEFAULT_MEMORY_DIR", str(tmp_path / "memory"))
+    monkeypatch.setattr(plugin_module, "_DEFAULT_ENV_FILE", str(tmp_path / "env"))
     fake_pkg = types.ModuleType("observational_memory")
     fake_pkg.__path__ = []
     original_find_spec = importlib.util.find_spec
