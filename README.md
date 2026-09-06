@@ -1,5 +1,10 @@
 # Hermes Observational Memory
 
+> **Unmaintained legacy software — September 5, 2026.** Final plugin release:
+> **1.5.2**. No feature, compatibility or security updates are promised.
+> Prefer Hermes built-in memory. See [migration](LEGACY.md); the installation
+> instructions below are retained for legacy users and forks.
+
 Observational Memory as a standalone Hermes memory-provider plugin.
 
 It gives Hermes access to the same local-first memory store used by Claude Code, Codex, OpenCode, Kimi Code CLI, Grok, Cowork, and other OM-connected agents. Hermes can load compact startup context, search prior observations and reflections, store explicit notes, and optionally write Hermes turns back into Observational Memory.

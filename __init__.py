@@ -713,11 +713,6 @@ class ObservationalMemoryProvider(MemoryProvider):
                         formatted.append(f"  {excerpt}")
                 parts.append("\n".join(formatted))
 
-        if not parts:
-            fallback = self._read_text(self._config.reflections_path)
-            if fallback:
-                parts.append(fallback)
-
         return "\n\n".join(p for p in parts if p.strip())
 
     def _startup_payload_text(self, *, task: str = "") -> str:
@@ -736,16 +731,9 @@ class ObservationalMemoryProvider(MemoryProvider):
             return str(getattr(payload, "text", "") or "").strip()
         except Exception as e:
             logger.debug("Observational Memory scoped startup payload skipped: %s", e)
-
-        self._ensure_startup_memory()
-        parts = []
-        profile = self._read_text(self._config.profile_path)
-        active = self._read_text(self._config.active_path)
-        if profile:
-            parts.append(profile)
-        if active:
-            parts.append(active)
-        return "\n\n".join(p for p in parts if p.strip())
+            # Failure to apply scope/freshness policy is not permission to read
+            # the unfiltered materialized files. Explicit search stays separate.
+            return ""
 
     @staticmethod
     def _is_om_startup_payload(text: str) -> bool:

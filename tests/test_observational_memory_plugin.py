@@ -34,6 +34,10 @@ def _load_plugin_module(monkeypatch):
 
 
 def _install_fake_om(monkeypatch, tmp_path, plugin_module):
+    # initialize() passes plugin defaults into Config. A fake Config alone does
+    # not isolate the caller's explicit defaults from the developer's real home.
+    monkeypatch.setattr(plugin_module, "_DEFAULT_MEMORY_DIR", str(tmp_path / "memory"))
+    monkeypatch.setattr(plugin_module, "_DEFAULT_ENV_FILE", str(tmp_path / "env"))
     fake_pkg = types.ModuleType("observational_memory")
     fake_pkg.__path__ = []
     original_find_spec = importlib.util.find_spec
@@ -148,6 +152,9 @@ def _install_fake_om(monkeypatch, tmp_path, plugin_module):
     startup_mod = types.ModuleType("observational_memory.startup_memory")
     startup_mod.ensure_startup_memory = ensure_startup_memory
     startup_mod.refresh_startup_memory = refresh_startup_memory
+    startup_mod.build_startup_payload = lambda config, **kwargs: types.SimpleNamespace(
+        text="# Startup Profile\n\n- prefers concise output\n\n# Active Context\n\n- scoped fixture"
+    )
 
     transcripts_mod = types.ModuleType("observational_memory.transcripts")
     transcripts_mod.Message = Message
@@ -265,6 +272,33 @@ def test_system_prompt_includes_startup_memory(monkeypatch, tmp_path):
     assert "Observational Memory" in prompt
     assert "Startup Profile" in prompt
     assert "Active Context" in prompt
+
+
+def test_startup_failure_never_reads_raw_memory(monkeypatch, tmp_path):
+    plugin_module = _load_plugin_module(monkeypatch)
+    _install_fake_om(monkeypatch, tmp_path, plugin_module)
+    provider = plugin_module.ObservationalMemoryProvider()
+    provider.initialize("failure", hermes_home=str(tmp_path))
+    for path in (provider._config.profile_path, provider._config.active_path, provider._config.reflections_path):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("PRIVATE_UNSCOPED_SENTINEL")
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("fixture policy failure")
+
+    monkeypatch.setattr(sys.modules["observational_memory.startup_memory"], "build_startup_payload", fail)
+    monkeypatch.setattr(provider, "_search", lambda *args, **kwargs: [])
+    assert provider._startup_payload_text() == ""
+    assert provider._build_context("query", 3, include_search=False) == ""
+    assert provider._build_context("query", 3, include_search=True) == ""
+    assert "PRIVATE_UNSCOPED_SENTINEL" not in provider.system_prompt_block()
+    monkeypatch.delattr(sys.modules["observational_memory.startup_memory"], "build_startup_payload")
+    assert provider._startup_payload_text() == ""
+    monkeypatch.setattr(
+        sys.modules["observational_memory.startup_memory"], "build_startup_payload",
+        lambda *args, **kwargs: types.SimpleNamespace(text=""), raising=False,
+    )
+    assert provider._build_context("query", 3, include_search=True) == ""
 
 
 def test_system_prompt_pulls_cluster_before_context(monkeypatch, tmp_path):
