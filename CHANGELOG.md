@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.5.2 - 2026-09-05
+
+- Final unmaintained legacy release; no future compatibility or security fixes promised.
+- Fail closed when scoped startup payload construction fails or is unavailable;
+  never substitute raw profile, active-context or reflection files.
+- Isolate test defaults from real user memory stores. Twelve fixture tests pass.
+- Retain the compatible OM 0.10 family and provide native-memory migration guidance.
+
 ## 1.5.1
 
 - accept the `observational-memory>=0.10.0,<0.11` release line

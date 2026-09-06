@@ -1,7 +1,7 @@
 name: observational_memory
 kind: exclusive
-version: 1.5.1
-description: "Observational Memory — local-first shared memory across Hermes, Claude Code, Codex, OpenCode, Kimi, Grok, and Cowork."
+version: 1.5.2
+description: "Unmaintained legacy OM provider. Prefer Hermes built-in memory; see LEGACY.md."
 author: "Bryan Young"
 provides_tools:
   - om_context
